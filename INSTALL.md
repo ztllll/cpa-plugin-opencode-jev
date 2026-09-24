@@ -81,6 +81,19 @@ jev-ask "greet" '{"hi":{"type":"noul","instructions":"Is this a greeting?"}}'
 | `choice` | **必填**，对象映射 `{"选项":"何时选它"}` | `{"choice":"a","confidence":...}` |
 | `score` | **必填**，档位数组 `["Calm","Frustrated","Very angry"]` | `{"score":0.88,...}` |
 
+## 与官方 Jev 用法兼容（可选）
+
+若在 cloudflared 隧道/反代后部署，可加一条路径转发，让客户端完全按官方
+`POST /zen/v1/systemone` 形状调用（base URL 换成本 CPA 域名、key 换成管理密钥）：
+
+```nginx
+location = /zen/v1/systemone {
+    proxy_pass http://127.0.0.1:28317/v0/management/plugins/opencode-jev/ask;
+    proxy_set_header Host $host;   # 其余标准 proxy_set_header 同 location /
+}
+```
+cloudflared 场景则加一条 ingress 规则把该路径导到 nginx。
+
 ## 模型选择
 
 - `jev-1.13`（默认，走 Go 套餐额度）
