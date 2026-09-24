@@ -7,8 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,18 +28,6 @@ var (
 	lastErr  string
 	lastUsed string
 )
-
-type registration struct {
-	SchemaVersion uint32                 `json:"schema_version"`
-	Metadata      pluginapi.Metadata     `json:"metadata"`
-	Capabilities  registrationCapability `json:"capabilities"`
-}
-
-type registrationCapability struct {
-	Scheduler     bool `json:"scheduler"`
-	UsagePlugin   bool `json:"usage_plugin"`
-	ManagementAPI bool `json:"management_api"`
-}
 
 type lifecycleRequest struct {
 	ConfigYAML []byte `json:"config_yaml"`
@@ -82,7 +68,7 @@ func discoverGoKeys(cpaConfigPath string) []string {
 // configure handles plugin.register / plugin.reconfigure. The host passes the
 // plugin's own config subtree; the plugin reads the full CPA config file
 // (default "config.yaml", relative to the CPA working directory) to discover
-// the OpenCode Go keys it rotates over.
+// the OpenCode Go keys it rotates over for the management /ask route.
 func configure(raw []byte) error {
 	var req lifecycleRequest
 	if len(raw) > 0 {
@@ -120,40 +106,4 @@ func configure(raw []byte) error {
 	mu.Unlock()
 	hostLog("info", "configured", map[string]any{"model": model, "keys": len(keys)})
 	return nil
-}
-
-func pluginRegistration() registration {
-	return registration{
-		SchemaVersion: pluginabi.SchemaVersion,
-		Metadata: pluginapi.Metadata{
-			Name:             pluginID,
-			Version:          pluginVersion,
-			Author:           "xiaosan",
-			GitHubRepository: "https://github.com/ztllll/cpa-plugin-opencode-jev",
-			ConfigFields: []pluginapi.ConfigField{
-				{
-					Name:        "model",
-					Type:        pluginapi.ConfigFieldTypeString,
-					Description: "Jev model id used when the request omits one (default jev-1.13).",
-				},
-			},
-		},
-		Capabilities: registrationCapability{ManagementAPI: true},
-	}
-}
-
-func handleMethod(method string, request []byte) ([]byte, error) {
-	switch method {
-	case pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure:
-		if errConfigure := configure(request); errConfigure != nil {
-			return nil, errConfigure
-		}
-		return okEnvelope(pluginRegistration())
-	case pluginabi.MethodManagementRegister:
-		return handleManagementRegister()
-	case pluginabi.MethodManagementHandle:
-		return handleManagement(request)
-	default:
-		return errorEnvelope("unknown_method", "unknown method: "+method), nil
-	}
 }

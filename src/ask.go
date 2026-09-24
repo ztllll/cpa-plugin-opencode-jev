@@ -9,7 +9,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-const systemoneURL = "https://opencode.ai/zen/v1/systemone"
 const managementBasePath = "/plugins/" + pluginID
 
 func handleManagementRegister() ([]byte, error) {
@@ -18,7 +17,26 @@ func handleManagementRegister() ([]byte, error) {
 			{Method: http.MethodGet, Path: managementBasePath + "/status"},
 			{Method: http.MethodPost, Path: managementBasePath + "/ask"},
 		},
+		// Public-shaped entry for official-path clients: they authenticate with
+		// one of the pool's own Go API keys (validated here, host does not
+		// check resource routes).
+		Resources: []pluginapi.ResourceRoute{
+			{Path: "/systemone", Menu: "Jev System One", Description: "OpenCode Jev decision API (System One)."},
+		},
 	})
+}
+
+// isKnownKey reports whether the presented bearer token matches any discovered
+// OpenCode Go key. Caller may hold no lock.
+func isKnownKey(token string) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	for _, k := range cfg.Keys {
+		if k == token {
+			return true
+		}
+	}
+	return false
 }
 
 func jsonResponse(status int, v any) ([]byte, error) {
@@ -33,17 +51,20 @@ func jsonResponse(status int, v any) ([]byte, error) {
 	})
 }
 
-func normalizeManagementPath(path string) string {
-	if idx := strings.Index(path, "/v0/management/plugins/"+pluginID); idx >= 0 {
-		return path[idx+len("/v0/management/plugins/"+pluginID):]
-	}
-	if strings.HasPrefix(path, managementBasePath) {
-		return strings.TrimPrefix(path, managementBasePath)
+func normalizeManagementPath(path string) (string, bool) {
+	isResource := false
+	if idx := strings.Index(path, "/v0/resource/plugins/"+pluginID); idx >= 0 {
+		path = path[idx+len("/v0/resource/plugins/"+pluginID):]
+		isResource = true
+	} else if idx := strings.Index(path, "/v0/management/plugins/"+pluginID); idx >= 0 {
+		path = path[idx+len("/v0/management/plugins/"+pluginID):]
+	} else if strings.HasPrefix(path, managementBasePath) {
+		path = strings.TrimPrefix(path, managementBasePath)
 	}
 	if path == "" {
-		return "/"
+		path = "/"
 	}
-	return path
+	return path, isResource
 }
 
 func handleManagement(raw []byte) ([]byte, error) {
@@ -51,10 +72,18 @@ func handleManagement(raw []byte) ([]byte, error) {
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return jsonResponse(http.StatusBadRequest, map[string]string{"error": "invalid management request"})
 	}
+	path, isResource := normalizeManagementPath(req.Path)
+
 	switch {
-	case req.Method == http.MethodGet && normalizeManagementPath(req.Path) == "/status":
+	case req.Method == http.MethodGet && path == "/status":
 		return jsonResponse(http.StatusOK, buildStatus())
-	case req.Method == http.MethodPost && normalizeManagementPath(req.Path) == "/ask":
+	case req.Method == http.MethodPost && path == "/ask":
+		return handleAsk(req)
+	case isResource && req.Method == http.MethodPost && path == "/systemone":
+		token := strings.TrimPrefix(req.Headers.Get("Authorization"), "Bearer ")
+		if !isKnownKey(strings.TrimSpace(token)) {
+			return jsonResponse(http.StatusUnauthorized, map[string]string{"error": "unknown api key"})
+		}
 		return handleAsk(req)
 	default:
 		return jsonResponse(http.StatusNotFound, map[string]string{"error": "not found"})

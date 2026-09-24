@@ -15,8 +15,9 @@ type envelope struct {
 }
 
 type envelopeError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	HTTPStatus int    `json:"http_status,omitempty"`
 }
 
 func okEnvelope(v any) ([]byte, error) {
@@ -29,6 +30,21 @@ func okEnvelope(v any) ([]byte, error) {
 
 func errorEnvelope(code, message string) []byte {
 	raw, _ := json.Marshal(envelope{OK: false, Error: &envelopeError{Code: code, Message: message}})
+	return raw
+}
+
+// statusError carries an upstream HTTP status; the host maps it to the
+// downstream response status for executor failures.
+type statusError struct {
+	status int
+	body   string
+}
+
+func (e *statusError) Error() string   { return e.body }
+func (e *statusError) StatusCode() int { return e.status }
+
+func errorEnvelopeWithStatus(code, message string, status int) []byte {
+	raw, _ := json.Marshal(envelope{OK: false, Error: &envelopeError{Code: code, Message: message, HTTPStatus: status}})
 	return raw
 }
 
