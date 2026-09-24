@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# jev-ask — call the OpenCode Jev decision API through CPA.
+# usage: jev-ask "state text" '{"q1":{"type":"noul","instructions":"..."},
+#        "q2":{"type":"choice","instructions":"...","criteria":{"a":"...","b":"..."}},
+#        "q3":{"type":"score","instructions":"..."}}'
+# env:   CPA_MANAGEMENT_KEY  (falls back to /home/pyadmin/cpa-usage-keeper/.env)
+#        JEV_ENDPOINT        (default http://127.0.0.1:28317)
+#        JEV_MODEL           (default jev-1.13)
+set -euo pipefail
+STATE="${1:?usage: jev-ask \"state text\" '{\"q\":{\"type\":\"noul\",\"instructions\":\"...\"}}'}"
+QUESTIONS="${2:?missing questions JSON}"
+KEY="${CPA_MANAGEMENT_KEY:-$(grep '^CPA_MANAGEMENT_KEY=' /home/pyadmin/cpa-usage-keeper/.env | cut -d= -f2)}"
+ENDPOINT="${JEV_ENDPOINT:-http://127.0.0.1:28317}"
+BODY="$(python3 -c 'import json,sys;print(json.dumps({"state":sys.argv[1],"questions":json.loads(sys.argv[2]),"model":sys.argv[3]}))' "$STATE" "$QUESTIONS" "${JEV_MODEL:-jev-1.13}")"
+curl -fsS --max-time 30 -X POST "$ENDPOINT/v0/management/plugins/opencode-jev/ask" \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d "$BODY"

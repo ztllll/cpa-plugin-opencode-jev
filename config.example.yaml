@@ -1,0 +1,5 @@
+plugins:
+  configs:
+    opencode-jev:
+      enabled: true
+      model: jev-1.13
